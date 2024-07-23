@@ -1,0 +1,65 @@
+# CryptoStrategyKit.py
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import requests
+
+class CryptoStrategyKit:
+    def __init__(self, api_url: str):
+        self.api_url = api_url
+        self.data = pd.DataFrame()
+
+    def fetch_historical_data(self, symbol: str, interval: str = '1d', limit: int = 100) -> pd.DataFrame:
+        """
+        Fetch historical price data for a specific cryptocurrency.
+        """
+        url = f"{self.api_url}/api/v3/klines"
+        params = {
+            'symbol': symbol,
+            'interval': interval,
+            'limit': limit
+        }
+        response = requests.get(url, params=params)
+        data = response.json()
+        
+        columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore']
+        df = pd.DataFrame(data, columns=columns)
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index('timestamp', inplace=True)
+        df = df.astype(float)
+        
+        self.data = df
+        return df
+
+    def moving_average_strategy(self, short_window: int = 50, long_window: int = 200):
+        """
+        Implement a simple moving average crossover strategy.
+        """
+        signals = pd.DataFrame(index=self.data.index)
+        signals['signal'] = 0.0
+
+        # Create short and long simple moving averages
+        signals['short_mavg'] = self.data['close'].rolling(window=short_window, min_periods=1, center=False).mean()
+        signals['long_mavg'] = self.data['close'].rolling(window=long_window, min_periods=1, center=False).mean()
+
+        # Create signals
+        signals['signal'][short_window:] = np.where(signals['short_mavg'][short_window:] > signals['long_mavg'][short_window:], 1.0, 0.0)
+
+        # Generate trading orders
+        signals['positions'] = signals['signal'].diff()
+        
+        self.signals = signals
+        return signals
+
+    def backtest_strategy(self, initial_capital: float = 100000.0):
+        """
+        Backtest the implemented strategy.
+        """
+        positions = pd.DataFrame(index=self.signals.index).fillna(0.0)
+        positions['crypto'] = 10 * self.signals['signal']
+        
+        portfolio = positions.multiply(self.data['close'], axis=0)
+        pos_diff = positions.diff()
+
+      
